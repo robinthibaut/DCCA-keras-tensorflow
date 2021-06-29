@@ -4,11 +4,14 @@ import logging
 from dcca_tensorflow.utils import load_data, svm_classify
 from dcca_tensorflow.linear_cca import linear_cca
 from dcca_tensorflow.models import create_model
-from keras.callbacks import ModelCheckpoint
+from tensorflow.keras.callbacks import ModelCheckpoint
 
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO
+)
+
 
 class DCCA:
 
@@ -28,7 +31,6 @@ class DCCA:
     # it does not affect the performance on noisy MNIST significantly
     apply_linear_cca = False
 
-
     def __init__(self, apply_linear_cca=True, output_dim=outdim_size, dropout=None):
         self.apply_linear_cca = apply_linear_cca
         self.output_dim = output_dim
@@ -38,40 +40,66 @@ class DCCA:
         self.layer_sizes1 = [1024, 1024, 1024, self.output_dim]
         self.layer_sizes2 = [1024, 1024, 1024, self.output_dim]
 
+    def train_dcca(
+        self,
+        data_view_1=None,
+        data_view_2=None,
+        outfile_prefix="",
+        num_epochs=epoch_num,
+        batch_size=batch_size,
+        models_path="./",
+    ):
 
-    def train_dcca(self, data_view_1=None, data_view_2=None, outfile_prefix="",
-                   num_epochs=epoch_num, batch_size=batch_size,
-                   models_path="./"):
-
-        logger.info("[Deep CCA] - Training DCCA. Apply Linear CCA: {}".format(self.apply_linear_cca))
+        logger.info(
+            "[Deep CCA] - Training DCCA. Apply Linear CCA: {}".format(
+                self.apply_linear_cca
+            )
+        )
 
         weights_file = models_path + "{}-weights_dcca_linear-cca-{}_bs-{}_outdim-{}_epochs-{}_dropout-{}_lr-{}_reg-{}.h5".format(
-                                                                                     outfile_prefix,
-                                                                                     self.apply_linear_cca,
-                                                                                     batch_size, self.output_dim,
-                                                                                     self.epoch_num,
-                                                                                     self.dropout,
-                                                                                     self.learning_rate,
-                                                                                     self.reg_par
-                                                                                     )
+            outfile_prefix,
+            self.apply_linear_cca,
+            batch_size,
+            self.output_dim,
+            self.epoch_num,
+            self.dropout,
+            self.learning_rate,
+            self.reg_par,
+        )
         input_shape1 = data_view_1[0][0].shape[1]
         input_shape2 = data_view_2[0][0].shape[1]
 
         print("Input shapes View 1: {} - View 2: {}".format(input_shape1, input_shape2))
 
-        model = create_model(self.layer_sizes1, self.layer_sizes2, input_shape1, input_shape2,
-                             DCCA.learning_rate, DCCA.reg_par, self.output_dim, DCCA.use_all_singular_values,
-                             dropout=self.dropout)
+        model = create_model(
+            self.layer_sizes1,
+            self.layer_sizes2,
+            input_shape1,
+            input_shape2,
+            DCCA.learning_rate,
+            DCCA.reg_par,
+            self.output_dim,
+            DCCA.use_all_singular_values,
+            dropout=self.dropout,
+        )
 
-        model = self.train_model(model, data_view_1, data_view_2, num_epochs, batch_size,
-                                 weights_file=weights_file)
-        new_data = self.test_model(model, data_view_1, data_view_2, self.output_dim, self.apply_linear_cca)
+        model = self.train_model(
+            model,
+            data_view_1,
+            data_view_2,
+            num_epochs,
+            batch_size,
+            weights_file=weights_file,
+        )
+        new_data = self.test_model(
+            model, data_view_1, data_view_2, self.output_dim, self.apply_linear_cca
+        )
 
         return new_data
 
-
-
-    def train_model(self, model, data1, data2, epoch_num, batch_size, weights_file=None):
+    def train_model(
+        self, model, data1, data2, epoch_num, batch_size, weights_file=None
+    ):
 
         # Unpacking the data
         train_set_x1, train_set_y1 = data1[0]
@@ -82,32 +110,50 @@ class DCCA:
         valid_set_x2, valid_set_y2 = data2[1]
         test_set_x2, test_set_y2 = data2[2]
 
-        print("View 1 summary", train_set_x1.shape, valid_set_x1.shape, test_set_x1.shape)
-        print("View 2 summary", train_set_x2.shape, valid_set_x2.shape, test_set_x2.shape)
+        print(
+            "View 1 summary", train_set_x1.shape, valid_set_x1.shape, test_set_x1.shape
+        )
+        print(
+            "View 2 summary", train_set_x2.shape, valid_set_x2.shape, test_set_x2.shape
+        )
 
-
-        checkpointer = ModelCheckpoint(filepath=weights_file, verbose=1, save_best_only=True,
-                                       save_weights_only=True)
+        checkpointer = ModelCheckpoint(
+            filepath=weights_file,
+            verbose=1,
+            save_best_only=True,
+            save_weights_only=True,
+        )
 
         # used dummy Y because labels are not used in the loss function
-        model.fit([train_set_x1, train_set_x2], np.zeros(len(train_set_x1)),
-                  batch_size=batch_size, epochs=epoch_num, shuffle=True,
-                  validation_data=([valid_set_x1, valid_set_x2], np.zeros(len(valid_set_x1))),
-                  callbacks=[checkpointer])
+        model.fit(
+            [train_set_x1, train_set_x2],
+            np.zeros(len(train_set_x1)),
+            batch_size=batch_size,
+            epochs=epoch_num,
+            shuffle=True,
+            validation_data=([valid_set_x1, valid_set_x2], np.zeros(len(valid_set_x1))),
+            callbacks=[checkpointer],
+        )
 
         model.load_weights(weights_file)
 
-        results = model.evaluate([test_set_x1, test_set_x2], np.zeros(len(test_set_x1)), batch_size=batch_size,
-                                 verbose=1)
+        results = model.evaluate(
+            [test_set_x1, test_set_x2],
+            np.zeros(len(test_set_x1)),
+            batch_size=batch_size,
+            verbose=1,
+        )
 
-        print('loss on test data: ', results)
+        print("loss on test data: ", results)
 
-        results = model.evaluate([valid_set_x1, valid_set_x2], np.zeros(len(valid_set_x1)), batch_size=batch_size,
-                                 verbose=1)
-        print('loss on validation data: ', results)
+        results = model.evaluate(
+            [valid_set_x1, valid_set_x2],
+            np.zeros(len(valid_set_x1)),
+            batch_size=batch_size,
+            verbose=1,
+        )
+        print("loss on validation data: ", results)
         return model
-
-
 
     def test_model(self, model, data1, data2, outdim_size, apply_linear_cca):
 
@@ -124,7 +170,9 @@ class DCCA:
             w = [None, None]
             m = [None, None]
             print("Linear CCA started!")
-            w[0], w[1], m[0], m[1] = linear_cca(new_data[0][0], new_data[0][1], outdim_size)
+            w[0], w[1], m[0], m[1] = linear_cca(
+                new_data[0][0], new_data[0][1], outdim_size
+            )
             print("Linear CCA ended!")
 
             # Something done in the original MATLAB implementation of DCCA, do not know exactly why;)
@@ -143,7 +191,3 @@ class DCCA:
 
         return new_data
 
-
-if __name__ == '__main__':
-    dcca = DCCA()
-    dcca.train_dcca()
